@@ -1,3 +1,3 @@
-import modules.data_loader as m
+import face_emotion.data_loader as m
 
-print(m.clf_test_data)
+print(m.load_dataset("data/classification_data"))
