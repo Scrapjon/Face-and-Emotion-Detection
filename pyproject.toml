@@ -9,12 +9,14 @@ description = "Face and Emotion Detection"
 requires-python = ">=3.10"
 dependencies = [
     "tensorflow",
+    "tf-keras",
     "opencv-python",
     "python-dotenv",
     "pandas",
     "numpy",
     "pillow",
     "ultralytics",
+    "deepface",
     "pyinstaller"
 ]
 

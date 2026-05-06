@@ -1,3 +1,5 @@
-import face_emotion.data_loader as m
+from face_emotion.face_recognition import FacialRecognitionModel
 
-print(m.load_dataset("data/classification_data"))
+if __name__ == "__main__":
+    model = FacialRecognitionModel()
+    model.run_stream()
