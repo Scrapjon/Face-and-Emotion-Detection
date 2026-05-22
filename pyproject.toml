@@ -9,12 +9,14 @@ description = "Face and Emotion Detection"
 requires-python = ">=3.10"
 dependencies = [
     "tensorflow",
+    "tf-keras",
     "opencv-python",
     "python-dotenv",
     "pandas",
     "numpy",
     "pillow",
     "ultralytics",
+    "deepface",
     "pyinstaller",
     "tkinter",
     "protobuf == 6.31.1" # required for pillow ImageTK module and tensorflow, this version is compatible with both

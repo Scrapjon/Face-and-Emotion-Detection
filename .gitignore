@@ -183,3 +183,6 @@ cython_debug/
 
 # hiding the data so it doesnt take forever to make commits
 /data
+
+#for now
+*.pkl
