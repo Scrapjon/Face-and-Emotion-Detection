@@ -18,7 +18,8 @@ dependencies = [
     "ultralytics",
     "deepface",
     "pyinstaller",
-    "protobuf == 6.31.1" # required for pillow ImageTK module and tensorflow, this version is compatible with both
+    "protobuf == 6.31.1", # required for pillow ImageTK module and tensorflow, this version is compatible with both
+    "scikit-learn"
 ]
 
 [tool.setuptools.packages.find]
