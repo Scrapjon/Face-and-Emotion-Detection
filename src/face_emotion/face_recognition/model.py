@@ -18,7 +18,7 @@ class FacialRecognitionModel:
     DETECTOR = "opencv"
     DISTANCE_METRIC = "cosine"
 
-    def __init__(self, db_path: Path | str = Path("data")) -> None:
+    def __init__(self, db_path: Path | str = Path("data", "classification_data", "train_data")) -> None:
         self.db_path = db_path
     
     def detect(self, frame):
@@ -30,6 +30,7 @@ class FacialRecognitionModel:
         """
         results = []
         try:
+            print(self.db_path)
             # dfs does not stand for deepfaces it stands for dataframes. its confusing ik.
             dfs = DeepFace.find(
                 img_path=frame,
