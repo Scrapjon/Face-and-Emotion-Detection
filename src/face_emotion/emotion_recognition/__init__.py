@@ -1,0 +1,1 @@
+from face_emotion.emotion_recognition.model import *
