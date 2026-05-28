@@ -9,8 +9,8 @@ def load_pairs(pairs_file): # takes txt file as input
         for line in f: # loop every line one at a time
             parts = line.strip().split() # splits 'img1 img2 1into a list
             if len(parts) == 3:
-                image1_paths.append(parts[0]) # add img1 to list (first image)
-                image2_paths.append(parts[1]) # add img2 to list (second image)
+                image1_paths.append("data/" + parts[0]) # add img1 to list (first image)
+                image2_paths.append("data/" + parts[1]) # add img2 to list (second image)
                 labels.append(int(parts[2])) # add label (1 or 0) to list, 1 means same person, 0 means different, need int to convert string to number
     return image1_paths, image2_paths, labels
 
@@ -38,5 +38,32 @@ def compute_all_scores(img1_list, img2_list):
         print(f"Pair {i+1}/{len(img1_list)} done") #i starts at 0 so add 1 to make it start at 1, and print progress to console
     return scores
 
-# need to complete plotting the roc curve to print out the AUC score
-# and main block so it runs
+def plot_roc_curve(labels, scores):
+    fpr, tpr, _ = roc_curve(labels, scores) # use sklearn to calculate the false positive and true positive rates from labels and scores
+    roc_auc = auc(fpr, tpr) # calculates the AUC score from the false/true positive rates (higher is better)
+
+    plt.figure() # blank page to draw on
+    plt.plot(fpr, tpr, color='blue', label=f'ROC Curve (AUC = {roc_auc:.4f})') # draw the ROC curve in blue and have the AUC score in the legend
+    plt.plot([0, 1], [0, 1], color='red', linestyle='--', label='Random Guess') # create a diagonal line to show how random guessing looks like
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve - Face Verification')
+    plt.legend()
+    plt.tight_layout() # adjust spacing so nothing gets cut off
+    plt.savefig('roc_curve.png') # save file
+    plt.show()
+    print(f"AUC Score: {roc_auc:.4f}") # print AUC score to 4 decimal places
+    return roc_auc # return the AUC score 
+
+    # added main
+if  __name__ == "__main__": # makes sure its ran only if the file is run directly 
+    pairs_file = "data/verification_pairs_val.txt"    # path to the pairs txt file
+
+    print("Loading pairs..")
+    img1_list, img2_list, labels = load_pairs(pairs_file)
+
+    print(f"Loaded {len(labels)} pairs. Computing similarity scores...")
+    scores = compute_all_scores(img1_list, img2_list) # go through each pair through deepface and get similiarity scores
+
+    print("Plotting ROC Cure..")
+    plot_roc_curve(labels, scores)

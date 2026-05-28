@@ -22,6 +22,7 @@ class FacialRecognitionModel:
 
     prev_recognitions = []
     detection_thread: Thread | None = None
+    should_exit = False # spaghetti code
 
     def __init__(
         self,
@@ -157,33 +158,35 @@ class FacialRecognitionModel:
             rval = False
             raise RuntimeError("NO CAMERA AAAAAAAAH (maybe try a different camera_index value...)")
         
-        try:
-            while rval:
-                rval, frame = vc.read()
-
-                if standalone:
-                    key = cv2.waitKey(20)
-                    if key == 27: # exit on ESC
-                        break
-                    if key == 100: # toggle detection on D
-                        self.detection_active = not self.detection_active
-
-                if self.detection_active:
-                    display_frame = self.async_detect(frame)
-                else:
-                    display_frame = frame
-
-                if standalone:
-                    cv2.imshow(WINDOW_TITLE, display_frame)
-                else:
-                    yield display_frame, 
-        finally:
-            vc.release()
+        
+        while rval:
+            rval, frame = vc.read()
             if standalone:
-                cv2.destroyAllWindows()
+                key = cv2.waitKey(20)
+                if key == 27: # exit on ESC
+                    break
+                if key == 100: # toggle detection on D
+                    self.detection_active = not self.detection_active
+            if self.detection_active:
+                display_frame = self.async_detect(frame)
+            else:
+                display_frame = frame
+            if self.should_exit:
+                break
+            if standalone:
+                cv2.imshow(WINDOW_TITLE, display_frame)
+            else:
+                yield display_frame
+        vc.release()
+        if standalone:
+            cv2.destroyAllWindows()
+
     def run_standalone(self, camera_index = 0):
         stream = self.run_stream(camera_index, True)
         next(stream)
+    
+    def stop_stream(self):
+        self.should_exit = True
 if __name__ == "__main__":
     model = FacialRecognitionModel(Path("debug_data"))
     model.run_standalone()
