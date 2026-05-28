@@ -6,6 +6,7 @@ import cv2
 import pandas as pd
 from deepface import DeepFace
 from dataclasses import dataclass
+from face_emotion.anti_spoofing import LivenessDetector
 
 CAMERA_FPS_CAP = 30
 
@@ -22,8 +23,14 @@ class FacialRecognitionModel:
     prev_recognitions = []
     detection_thread: Thread | None = None
 
-    def __init__(self, db_path: Path | str = Path("data", "classification_data", "train_data")) -> None:
+    def __init__(
+        self,
+        db_path: Path | str = Path("data", "classification_data", "train_data"),
+        liveness_model_path: Path | str = Path("models", "liveness_model.keras"),
+        liveness_threshold: float = 0.60,
+    ) -> None:
         self.db_path = db_path
+        self.liveness = LivenessDetector(liveness_model_path, threshold=liveness_threshold)
     
     def detect(self, frame):
         """
@@ -60,7 +67,23 @@ class FacialRecognitionModel:
                 
             except (KeyError, IndexError):
                 x = y = w = h = 0
-            if len(df) == 0:
+            live_probability = 1.0
+            is_live = True
+
+            # Liveness / anti-spoofing is checked before trusting the identity match.
+            # A phone-screen or printed-photo face should be labelled as SPOOF and blocked.
+            if w > 0 and h > 0:
+                face_crop = frame[max(0, y):max(0, y) + h, max(0, x):max(0, x) + w]
+                try:
+                    is_live, live_probability = self.liveness.check(face_crop)
+                except Exception as e:
+                    print(f"Liveness check failed: {e}")
+                    is_live = False
+                    live_probability = 0.0
+
+            if not is_live:
+                name = "SPOOF / FAKE FACE"
+            elif len(df) == 0:
                 name = UNKNOWN_NAME
             else:
                 identity_path = df.iloc[0]['identity'] # face_data may be unbound so just grab it again
@@ -71,7 +94,12 @@ class FacialRecognitionModel:
                 """
                 name = os.path.basename(os.path.dirname(identity_path))
 
-            results.append({'name': name, 'box': (x, y, w, h)})
+            results.append({
+                'name': name,
+                'box': (x, y, w, h),
+                'is_live': is_live,
+                'live_probability': live_probability,
+            })
         return results
     
     @staticmethod
@@ -79,10 +107,16 @@ class FacialRecognitionModel:
         for r in recognitions:
             x, y, w, h = r['box']
             name = r['name']
-            color = (0, 255, 0) if name != UNKNOWN_NAME else (0, 0, 255)
+            is_live = r.get('is_live', True)
+            live_probability = r.get('live_probability', 1.0)
+            if not is_live:
+                color = (0, 0, 255)
+            else:
+                color = (0, 255, 0) if name != UNKNOWN_NAME else (0, 165, 255)
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             label_y = y - 10 if y - 10 > 10 else y + h + 20
-            cv2.putText(frame, name, (x, label_y), cv2.FONT_HERSHEY_COMPLEX, 0.8, color, 2)
+            label = f"{name} | live={live_probability:.2f}"
+            cv2.putText(frame, label, (x, label_y), cv2.FONT_HERSHEY_COMPLEX, 0.65, color, 2)
         return frame
     
     def detect_and_assign(self, frame):
