@@ -27,7 +27,7 @@ class FacialRecognitionModel:
     def __init__(
         self,
         db_path: Path | str = Path("data", "classification_data", "train_data"),
-        liveness_model_path: Path | str = Path("models", "liveness_model.keras"),
+        liveness_model_path: Path | str = Path("src", "models", "liveness_model.keras"),
         liveness_threshold: float = 0.60,
     ) -> None:
         self.db_path = db_path

@@ -8,10 +8,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Tuple
 
+import tensorflow as tf
+import keras
 import cv2
 import numpy as np
-from tensorflow.keras.models import load_model
-
 
 class LivenessDetector:
     """Loads and runs the trained anti-spoofing model."""
@@ -28,7 +28,7 @@ class LivenessDetector:
         self.model = None
 
         if self.model_path.exists():
-            self.model = load_model(self.model_path)
+            self.model = keras.models.load_model(self.model_path)
         else:
             print(f"[LivenessDetector] No model found at {self.model_path}. Liveness check is disabled.")
 
