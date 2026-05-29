@@ -167,6 +167,8 @@ class FacialRecognitionModel:
                     break
                 if key == 100: # toggle detection on D
                     self.detection_active = not self.detection_active
+                if key == ord('r'): # "i hate consistency" - Movi
+                    self.register_face(frame)
             if self.detection_active:
                 display_frame = self.async_detect(frame)
             else:
@@ -187,6 +189,9 @@ class FacialRecognitionModel:
     
     def stop_stream(self):
         self.should_exit = True
+
+    def register_face(self, frame):
+        pass
 if __name__ == "__main__":
     model = FacialRecognitionModel(Path("debug_data"))
     model.run_standalone()
