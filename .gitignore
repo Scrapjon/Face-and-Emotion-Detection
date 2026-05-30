@@ -187,3 +187,5 @@ cython_debug/
 #for now
 *.pkl
 .vscode
+#
+src/face_emotion/face_recognition/model/new_weights.weights.h5
