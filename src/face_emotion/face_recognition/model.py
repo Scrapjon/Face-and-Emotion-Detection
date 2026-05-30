@@ -2,15 +2,33 @@ import os
 from pathlib import Path
 import time
 from threading import Thread
+from datetime import datetime
 import cv2
 import pandas as pd
 from deepface import DeepFace
 from dataclasses import dataclass
+from face_emotion.anti_spoofing import LivenessDetector
 
 CAMERA_FPS_CAP = 30
 
 UNKNOWN_NAME = "WHO ARE YOU???"
 WINDOW_TITLE = "IMAGE RECOGNITION WOAHHHHH!"
+
+
+def clear_deepface_cache():
+    """Clear any cached DeepFace data if the API is available."""
+    try:
+        if hasattr(DeepFace, "clear_cache"):
+            DeepFace.clear_cache()
+            return
+    except Exception:
+        pass
+    try:
+        from deepface.commons import functions as deepface_functions
+        if hasattr(deepface_functions, "clear_cache"):
+            deepface_functions.clear_cache()
+    except Exception:
+        pass
 
 
 # ahh maybe needs a better name lol
@@ -23,8 +41,14 @@ class FacialRecognitionModel:
     detection_thread: Thread | None = None
     should_exit = False # spaghetti code
 
-    def __init__(self, db_path: Path | str = Path("data", "classification_data", "train_data")) -> None:
+    def __init__(
+        self,
+        db_path: Path | str = Path("data", "classification_data", "train_data"),
+        liveness_model_path: Path | str = Path("src", "models", "liveness_model.keras"),
+        liveness_threshold: float = 0.60,
+    ) -> None:
         self.db_path = db_path
+        self.liveness = LivenessDetector(liveness_model_path, threshold=liveness_threshold)
     
     def detect(self, frame):
         """
@@ -61,7 +85,23 @@ class FacialRecognitionModel:
                 
             except (KeyError, IndexError):
                 x = y = w = h = 0
-            if len(df) == 0:
+            live_probability = 1.0
+            is_live = True
+
+            # Liveness / anti-spoofing is checked before trusting the identity match.
+            # A phone-screen or printed-photo face should be labelled as SPOOF and blocked.
+            if w > 0 and h > 0:
+                face_crop = frame[max(0, y):max(0, y) + h, max(0, x):max(0, x) + w]
+                try:
+                    is_live, live_probability = self.liveness.check(face_crop)
+                except Exception as e:
+                    print(f"Liveness check failed: {e}")
+                    is_live = False
+                    live_probability = 0.0
+
+            if not is_live:
+                name = "SPOOF / FAKE FACE"
+            elif len(df) == 0:
                 name = UNKNOWN_NAME
             else:
                 identity_path = df.iloc[0]['identity'] # face_data may be unbound so just grab it again
@@ -72,7 +112,12 @@ class FacialRecognitionModel:
                 """
                 name = os.path.basename(os.path.dirname(identity_path))
 
-            results.append({'name': name, 'box': (x, y, w, h)})
+            results.append({
+                'name': name,
+                'box': (x, y, w, h),
+                'is_live': is_live,
+                'live_probability': live_probability,
+            })
         return results
     
     @staticmethod
@@ -80,10 +125,16 @@ class FacialRecognitionModel:
         for r in recognitions:
             x, y, w, h = r['box']
             name = r['name']
-            color = (0, 255, 0) if name != UNKNOWN_NAME else (0, 0, 255)
+            is_live = r.get('is_live', True)
+            live_probability = r.get('live_probability', 1.0)
+            if not is_live:
+                color = (0, 0, 255)
+            else:
+                color = (0, 255, 0) if name != UNKNOWN_NAME else (0, 165, 255)
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             label_y = y - 10 if y - 10 > 10 else y + h + 20
-            cv2.putText(frame, name, (x, label_y), cv2.FONT_HERSHEY_COMPLEX, 0.8, color, 2)
+            label = f"{name} | live={live_probability:.2f}"
+            cv2.putText(frame, label, (x, label_y), cv2.FONT_HERSHEY_COMPLEX, 0.65, color, 2)
         return frame
     
     def detect_and_assign(self, frame):
@@ -133,6 +184,8 @@ class FacialRecognitionModel:
                     break
                 if key == 100: # toggle detection on D
                     self.detection_active = not self.detection_active
+                if key == ord('r'): # "i hate consistency" - Movi
+                    self.register_face(frame)
             if self.detection_active:
                 display_frame = self.async_detect(frame)
             else:
@@ -153,6 +206,64 @@ class FacialRecognitionModel:
     
     def stop_stream(self):
         self.should_exit = True
+
+    def register_face(self, frame):
+        name = input("Enter name for this new person: ").strip()
+
+        if name == "":
+            print("Registration cancelled. Name cannot be empty.")
+            return
+
+        person_folder = os.path.join(self.db_path, name)
+        os.makedirs(person_folder, exist_ok=True)
+
+        print("\nRegistration started.")
+        print("Slowly turn your head left and right.")
+        print("Try front view, side view, smiling, and different lighting.")
+        print("Capturing 12 face images...\n")
+
+        captured = 0
+
+        while captured < 12:
+            ret, frame = cv2.VideoCapture(0).read()
+
+            if not ret:
+                continue
+
+            display_frame = frame.copy()
+
+            cv2.putText(
+                display_frame,
+                f"Registering {name}: {captured + 1}/12",
+                (30, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (0, 255, 0),
+                2
+            )
+
+            cv2.putText(
+                display_frame,
+                "Slowly turn your head left and right",
+                (30, 80),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255, 255, 255),
+                2
+            )
+
+            cv2.imshow("Facial Recognition Attendance System", display_frame)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            image_path = os.path.join(person_folder, f"{name}_{timestamp}.jpg")
+
+            cv2.imwrite(image_path, frame)
+            captured += 1
+
+            cv2.waitKey(500)
+
+        clear_deepface_cache()
+        print(f"Registered {captured} images for {name}.")
 if __name__ == "__main__":
     model = FacialRecognitionModel(Path("debug_data"))
     model.run_standalone()
