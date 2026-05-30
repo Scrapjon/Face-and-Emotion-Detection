@@ -1,5 +1,8 @@
 import os
 import gdown
+import numpy as np
+from numpy.typing import NDArray
+from typing import List, cast, Any
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.layers import (
 	Convolution2D,
@@ -12,55 +15,83 @@ from tensorflow.keras.layers import (
 #
 WEIGHTS_URL = "https://drive.google.com/file/d/1tJ9b2xgTPfjPu8Fa-_zCpA60edzlmICU/view?usp=drive_link"
 #
-def base_model() -> Sequential:
-	"""Create the base sequential model"""
-	model = Sequential()
-	model.add(ZeroPadding2D((1, 1), input_shape=(224, 224, 3)))
-	model.add(Convolution2D(64, (3, 3), activation="relu"))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(64, (3, 3), activation="relu"))
-	model.add(MaxPooling2D((2, 2), strides=(2, 2)))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(128, (3, 3), activation="relu"))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(128, (3, 3), activation="relu"))
-	model.add(MaxPooling2D((2, 2), strides=(2, 2)))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(256, (3, 3), activation="relu"))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(256, (3, 3), activation="relu"))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(256, (3, 3), activation="relu"))
-	model.add(MaxPooling2D((2, 2), strides=(2, 2)))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(512, (3, 3), activation="relu"))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(512, (3, 3), activation="relu"))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(512, (3, 3), activation="relu"))
-	model.add(MaxPooling2D((2, 2), strides=(2, 2)))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(512, (3, 3), activation="relu"))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(512, (3, 3), activation="relu"))
-	model.add(ZeroPadding2D((1, 1)))
-	model.add(Convolution2D(512, (3, 3), activation="relu"))
-	model.add(MaxPooling2D((2, 2), strides=(2, 2)))
-	# layers in base VGGFace model, not used here
-	# model.add(Convolution2D(4096, (7, 7), activation="relu"))
-	# model.add(Dropout(0.5))
-	# model.add(Convolution2D(4096, (1, 1), activation="relu"))
-	# model.add(Dropout(0.5))
-	# model.add(Convolution2D(2622, (1, 1)))
-	model.add(Flatten())
-	model.add(Activation("softmax"))
-	return model
+class Face_Recognition_Client():
+	def __init__(self):
+		self.model = load_model()
+		self.input_shape = (224,224)
+		self.output_shape = 4096
+	def forward(self, img: NDArray) -> List[float]:
+		""""""
+		# if not isinstance(self.model, Model):
+		# 	raise ValueError("Model hasnt been loaded properly?! Something has gone wrong!")
+		# if img.ndim == 3:
+		# 	img = np.expand_dims(img, axis=0)
+		# if img.ndim == 4 and img.shape[0] == 1:
+		# 	embeddings = self.model(img, training=False).numpy()
+		# if img.ndim == 4 and img.shape[0] > 1:
+		# 	embeddings = self.model.predict_on_batch(img)
+		# if embeddings.shape[0] == 1:
+		# 	return cast(List[float], embeddings[0].tolist())
+		# return cast(List[List[float]], embeddings.tolist())
+		embedding = self.model.predict(img, verbose=0)[0].tolist()
+		if isinstance(embedding, list) and len(embedding) > 0 and isinstance(embedding[0], list):
+			embedding = cast(List[List[float]], embedding)
+			norm = np.linalg.norm(np.asarray(embedding), axis=1, keepdims=True)
+			embedding_norm = cast(NDArray[Any], embedding / (norm + 1e-10))
+		else:
+			embedding = cast(List[float], embedding)
+			norm = np.linalg.norm(np.asarray(embedding), axis=None, keepdims=True)
+			embedding_norm = cast(NDArray[Any], embedding / (norm + 1e-10))
+		return cast(List[float], embedding_norm.tolist())
 #
 def load_model():
-	""""""
+	"""Load the model"""
+	def base_model() -> Sequential:
+		"""Create the base sequential model"""
+		model = Sequential()
+		model.add(ZeroPadding2D((1, 1), input_shape=(224, 224, 3)))
+		model.add(Convolution2D(64, (3, 3), activation="relu"))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(64, (3, 3), activation="relu"))
+		model.add(MaxPooling2D((2, 2), strides=(2, 2)))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(128, (3, 3), activation="relu"))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(128, (3, 3), activation="relu"))
+		model.add(MaxPooling2D((2, 2), strides=(2, 2)))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(256, (3, 3), activation="relu"))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(256, (3, 3), activation="relu"))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(256, (3, 3), activation="relu"))
+		model.add(MaxPooling2D((2, 2), strides=(2, 2)))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(512, (3, 3), activation="relu"))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(512, (3, 3), activation="relu"))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(512, (3, 3), activation="relu"))
+		model.add(MaxPooling2D((2, 2), strides=(2, 2)))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(512, (3, 3), activation="relu"))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(512, (3, 3), activation="relu"))
+		model.add(ZeroPadding2D((1, 1)))
+		model.add(Convolution2D(512, (3, 3), activation="relu"))
+		model.add(MaxPooling2D((2, 2), strides=(2, 2)))
+		# layers in base VGGFace model, not used here
+		# model.add(Convolution2D(4096, (7, 7), activation="relu"))
+		# model.add(Dropout(0.5))
+		# model.add(Convolution2D(4096, (1, 1), activation="relu"))
+		# model.add(Dropout(0.5))
+		# model.add(Convolution2D(2622, (1, 1)))
+		model.add(Flatten())
+		model.add(Activation("softmax"))
+		return model
 	model: Sequential = base_model()
 	def get_weight_file() -> str:
-		""""""
+		"""Download the weights file if it isnt already downloaded"""
 		file_path = "src/face_emotion/face_recognition/model/new_weights.weights.h5"
 		target_file = os.path.normpath(file_path)
 		if os.path.isfile(target_file):
