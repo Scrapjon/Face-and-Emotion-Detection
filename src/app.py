@@ -2,60 +2,70 @@ import cv2 as cv
 import tkinter as tk
 import sys
 from pathlib import Path
-from typing import Dict, Tuple
-from cv2.typing import MatLike
+from typing import Dict
 import numpy as np
 from PIL import Image, ImageTk
-from threading import Thread
+from threading import Thread, Lock
 from face_emotion.face_recognition import FacialRecognitionModel
-# Constants
-CAMERA: Dict[str, int] = { # might be different for ur computer
-	'BACK'	: 0,
-	'FRONT'	: 1
+
+CAMERA: Dict[str, int] = {
+    'BACK': 0,
+    'FRONT': 1
 }
 WINDOW_NAME: str = 'Face and Emotion Detection'
 IMAGE_SIZE = 500, 500
 
+
 class App:
-	db_path: Path
-	model: FacialRecognitionModel
-	root: tk.Tk
+    db_path: Path
+    model: FacialRecognitionModel
+    root: tk.Tk
+    frame_label: tk.Label
 
-	frame_label: tk.Label
-	current_frame = None
+    def __init__(self, db_path: Path | str):
+        self.model = FacialRecognitionModel(db_path)
+        self._pending_image = None      # next frame ready to display
+        self._current_photo = None      # holds reference so GC doesn't collect it
+        self._lock = Lock()
 
-	def __init__(self, db_path: Path | str):
-		self.model = FacialRecognitionModel(db_path)
+    def detection_loop(self):
+        for frame in self.model.run_stream():
+            if not isinstance(frame, np.ndarray):
+                continue
+            rgb = frame[:, :, ::-1]
+            img = Image.fromarray(rgb).resize(IMAGE_SIZE)
+            photo = ImageTk.PhotoImage(img)
+            with self._lock:
+                self._pending_image = photo  # hand off to main thread
 
-	def detection_loop(self):
-		frames = self.model.run_stream()
+    def _poll_frame(self):
+        """Called on the main thread every 16 ms (~60 fps cap). Applies any pending frame."""
+        with self._lock:
+            if self._pending_image is not None:
+                self._current_photo = self._pending_image   # keep reference alive
+                self._pending_image = None
+                self.frame_label.configure(image=self._current_photo)
+        self.root.after(16, self._poll_frame)
 
-		for frame in frames: # infinite loop until manually broken or error
-			if type(frame) != np.ndarray: continue
-			frame = frame[:, :, ::-1] # Convert from BGR to RGB
-			frame_image = Image.fromarray(frame)
-			frame_image = frame_image.resize(IMAGE_SIZE)
-			frame_image = ImageTk.PhotoImage(frame_image)
-			self.frame_label.configure(image=frame_image)
+    def run(self):
+        self.root = tk.Tk()
+        self.root.title(WINDOW_NAME)
 
-	def run(self):
-		self.root = tk.Tk(WINDOW_NAME)
-		running = True
-		self.frame_label = tk.Label(self.root)
-		self.frame_label.pack(side="bottom", fill="both", expand=True)
-		#self.prev_frame_label = tk.Label(self.root)
-		#self.prev_frame_label.pack(side="bottom", fill="both", expand=True)
+        self.frame_label = tk.Label(self.root)
+        self.frame_label.pack(side="bottom", fill="both", expand=True)
 
-		
+        # Start background detection thread
+        detection_thread = Thread(target=self.detection_loop, daemon=True)
+        detection_thread.start()
 
-		detection_thread = Thread(None, self.detection_loop)
-		detection_thread.start()
-		self.root.mainloop()
-		self.model.stop_stream()
-		print("Exiting...")
+        # Start the main-thread polling loop
+        self.root.after(16, self._poll_frame)
 
-# entry point
+        self.root.mainloop()
+        self.model.stop_stream()
+        print("Exiting...")
+
+
 if __name__ == "__main__":
-
-	app = App("debug_data")
-	app.run()
+    app = App("debug_data")
+    app.run()
