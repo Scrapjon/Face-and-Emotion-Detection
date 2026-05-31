@@ -20,7 +20,7 @@ dependencies = [
     "pyinstaller",
     "protobuf == 6.31.1", # required for pillow ImageTK module and tensorflow, this version is compatible with both
     "scikit-learn",
-    "FreeSimpleGUI"
+    "seaborn"
 ]
 
 [tool.setuptools.packages.find]

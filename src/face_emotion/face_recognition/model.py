@@ -1,18 +1,32 @@
 import os
+import pickle
+import warnings
 from pathlib import Path
-import time
 from threading import Thread
 from datetime import datetime
 import cv2
-import pandas as pd
+import numpy as np
 from deepface import DeepFace
-from dataclasses import dataclass
 from face_emotion.anti_spoofing import LivenessDetector
+from face_emotion.emotion_recognition.emotion_detector import EmotionDetector
+from face_emotion.face_recognition.face_model import FaceRecognitionClient
 
 CAMERA_FPS_CAP = 30
 
 UNKNOWN_NAME = "WHO ARE YOU???"
 WINDOW_TITLE = "IMAGE RECOGNITION WOAHHHHH!"
+
+# cosine similarity threshold. same person if score >= this. tune if recognition is too strict/loose
+COSINE_THRESHOLD = 0.5
+
+# pkl file suffix appended to db_path to store the embedding cache
+DB_CACHE_SUFFIX = "_embeddings.pkl"
+
+# image extensions we bother scanning when building the DB
+SUPPORTED_IMG_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff'}
+
+# opencv's built-in haar cascade for frontal face detection
+HAAR_CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 
 
 def clear_deepface_cache():
@@ -31,95 +45,220 @@ def clear_deepface_cache():
         pass
 
 
+def _cosine_sim(a, b) -> float:
+    # dot product of two L2-normalised vectors == cosine similarity. face_client already normalises.
+    return float(np.dot(np.asarray(a, dtype='float32'), np.asarray(b, dtype='float32')))
+
+
 # ahh maybe needs a better name lol
 class FacialRecognitionModel:
-    MODEL_NAME = "Facenet"
-    DETECTOR = "opencv"
-    DISTANCE_METRIC = "cosine"
-
     prev_recognitions = []
     detection_thread: Thread | None = None
-    should_exit = False # spaghetti code
+    should_exit = False  # spaghetti code
 
     def __init__(
         self,
         db_path: Path | str = Path("data", "classification_data", "train_data"),
         liveness_model_path: Path | str = Path("src", "models", "liveness_model.keras"),
+        emotion_model_path: Path | str = Path(
+            "src", "face_emotion", "emotion_recognition", "fine_tuned_models", "ft_emotion_model.h5"
+        ),
         liveness_threshold: float = 0.60,
+        cosine_threshold: float = COSINE_THRESHOLD,
     ) -> None:
-        self.db_path = db_path
+        self.db_path = Path(db_path)
+        self.cosine_threshold = cosine_threshold
+        self.detection_active = True
+
+        # liveness / anti-spoofing
         self.liveness = LivenessDetector(liveness_model_path, threshold=liveness_threshold)
-    
-    def detect(self, frame):
+
+        # emotion detector (separate model, 48x48 grayscale -> 7-class softmax)
+        self.emotion_detector = EmotionDetector(emotion_model_path)
+
+        # our custom fine-tuned VGGFace model for face recognition
+        print("[FacialRecognitionModel] Loading face recognition client...")
+        self.face_client = FaceRecognitionClient()
+
+        # haar cascade replaces deepface's detector. no extra dependencies needed, cv2 ships with it
+        self.face_cascade = cv2.CascadeClassifier(HAAR_CASCADE_PATH)
+        if self.face_cascade.empty():
+            raise RuntimeError(
+                f"Failed to load Haar cascade from {HAAR_CASCADE_PATH}. "
+                "Something is very wrong with your opencv install."
+            )
+
+        # embedding DB: {person_name: [emb1, emb2, ...]}
+        self.embedding_db: dict[str, list] = {}
+        self._pkl_path = Path(str(self.db_path) + DB_CACHE_SUFFIX)
+        self._load_or_build_db()
+
+    # -- preprocessing --
+
+    def _preprocess_face(self, face_bgr: np.ndarray) -> np.ndarray:
+        """resize to 224x224, BGR->RGB, add batch dim, cast to float32. ready for face_client.forward()"""
+        resized = cv2.resize(face_bgr, (224, 224))
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        return np.expand_dims(rgb, axis=0).astype('float32')
+
+    # -- embedding DB management --
+
+    def _load_or_build_db(self):
+        """load cached pkl if it exists, otherwise scan db_path and build from scratch"""
+        if self._pkl_path.exists():
+            try:
+                with open(self._pkl_path, 'rb') as f:
+                    self.embedding_db = pickle.load(f)
+                print(
+                    f"[FacialRecognitionModel] Loaded {len(self.embedding_db)} people "
+                    f"from cache at {self._pkl_path}"
+                )
+                return
+            except Exception as e:
+                print(f"[FacialRecognitionModel] Cache load failed ({e}), rebuilding...")
+
+        print(
+            f"[FacialRecognitionModel] Building embedding DB from {self.db_path}... "
+            "(might take a bit for large datasets)"
+        )
+        self.embedding_db = self._build_embedding_db()
+        self._save_db()
+        print(f"[FacialRecognitionModel] DB ready with {len(self.embedding_db)} people")
+
+    def _build_embedding_db(self) -> dict[str, list]:
+        """scan db_path for person_name/image.jpg structure and compute embeddings for everything"""
+        db: dict[str, list] = {}
+
+        if not self.db_path.exists():
+            warnings.warn(
+                f"[FacialRecognitionModel] db_path {self.db_path} does not exist. "
+                "Starting with an empty DB."
+            )
+            return db
+
+        for person_dir in sorted(self.db_path.iterdir()):
+            if not person_dir.is_dir():
+                continue
+            name = person_dir.name
+            embeddings = []
+
+            for img_file in sorted(person_dir.iterdir()):
+                if img_file.suffix.lower() not in SUPPORTED_IMG_EXTENSIONS:
+                    continue
+                img = cv2.imread(str(img_file))
+                if img is None:
+                    continue
+                try:
+                    tensor = self._preprocess_face(img)
+                    emb = self.face_client.forward(tensor)
+                    embeddings.append(emb)
+                except Exception as e:
+                    print(f"  [skip] {img_file.name}: {e}")
+
+            if embeddings:
+                db[name] = embeddings
+                print(f"  {name}: {len(embeddings)} embeddings")
+
+        return db
+
+    def _save_db(self):
+        """pickle the embedding dict to disk so we dont recompute every startup"""
+        try:
+            with open(self._pkl_path, 'wb') as f:
+                pickle.dump(self.embedding_db, f)
+        except Exception as e:
+            print(f"[FacialRecognitionModel] Failed to save DB cache: {e}")
+
+    def _identify(self, embedding) -> tuple[str, float]:
+        """
+        compare embedding against all stored embeddings.
+        returns (best_name, best_score). returns UNKNOWN_NAME if nothing beats cosine_threshold.
+        """
+        best_name = UNKNOWN_NAME
+        best_score = -1.0
+
+        for name, stored_embeddings in self.embedding_db.items():
+            for stored_emb in stored_embeddings:
+                score = _cosine_sim(embedding, stored_emb)
+                if score > best_score:
+                    best_score = score
+                    best_name = name
+
+        if best_score < self.cosine_threshold:
+            return UNKNOWN_NAME, best_score
+        return best_name, best_score
+
+    # -- core detection --
+
+    def detect(self, frame) -> list[dict]:
         """
         detects faces (duh!)
-        Args:
-            frame (dunno): the frame that faces should be in hopefully. also should be BGR formatting (not RGB)
-        THATS ALL THE ARGS!
+        runs haar cascade -> liveness -> emotion -> identity on each detected face.
+        returns list of dicts: {name, box, is_live, live_probability, emotion, emotion_probs}
         """
         results = []
-        try:
-            # dfs does not stand for deepfaces it stands for dataframes. its confusing ik.
-            dfs = DeepFace.find(
-                img_path=frame,
-                db_path=str(self.db_path),
-                model_name=self.MODEL_NAME,
-                detector_backend=self.DETECTOR,
-                distance_metric=self.DISTANCE_METRIC,
-                enforce_detection=False,
-                silent=True
-            )
-        except: # either no face in frame or no images in DB
-            print("Nothing seen")
+
+        if frame is None or frame.size == 0:
             return results
-        
-        # get bounding box data
-        for df in dfs:
-            df = pd.DataFrame(df) # shut up type checker!
-            try:
-                face_data = df.iloc[0]
-                x = int(face_data['source_x'])
-                y = int(face_data['source_y'])
-                w = int(face_data['source_w'])
-                h = int(face_data['source_h'])
-                
-            except (KeyError, IndexError):
-                x = y = w = h = 0
-            live_probability = 1.0
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = self.face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(50, 50)
+        )
+
+        for (x, y, w, h) in faces:
+            face_crop = frame[max(0, y):y + h, max(0, x):x + w]
+
+            if face_crop.size == 0:
+                continue
+
+            # liveness / anti-spoofing. phone screens and printed photos go here
             is_live = True
+            live_probability = 1.0
+            try:
+                is_live, live_probability = self.liveness.check(face_crop)
+            except Exception as e:
+                print(f"Liveness check failed: {e}")
+                is_live = False
+                live_probability = 0.0
 
-            # Liveness / anti-spoofing is checked before trusting the identity match.
-            # A phone-screen or printed-photo face should be labelled as SPOOF and blocked.
-            if w > 0 and h > 0:
-                face_crop = frame[max(0, y):max(0, y) + h, max(0, x):max(0, x) + w]
+            # emotion - run even for spoofs, its kinda funny to see what emotion a photo has
+            emotion_label = 'unknown'
+            emotion_probs: dict = {}
+            if self.emotion_detector.is_available():
                 try:
-                    is_live, live_probability = self.liveness.check(face_crop)
+                    emotion_label, emotion_probs = self.emotion_detector.detect(face_crop)
                 except Exception as e:
-                    print(f"Liveness check failed: {e}")
-                    is_live = False
-                    live_probability = 0.0
+                    print(f"Emotion detection failed: {e}")
 
+            # identity recognition
             if not is_live:
                 name = "SPOOF / FAKE FACE"
-            elif len(df) == 0:
+            elif len(self.embedding_db) == 0:
                 name = UNKNOWN_NAME
             else:
-                identity_path = df.iloc[0]['identity'] # face_data may be unbound so just grab it again
-                """
-                pretty sick that you can get the closest image to you. (im adding that as a cool feature)
-                we can display next to the webcam the image it is the most confident you resemble.
-                for example: Oliver would look a LOT like Chris Hemsworth so put an image of shirtless Chris Hemsworth on screen.
-                """
-                name = os.path.basename(os.path.dirname(identity_path))
+                try:
+                    tensor = self._preprocess_face(face_crop)
+                    embedding = self.face_client.forward(tensor)
+                    name, _ = self._identify(embedding)
+                except Exception as e:
+                    print(f"Recognition failed: {e}")
+                    name = UNKNOWN_NAME
 
             results.append({
                 'name': name,
-                'box': (x, y, w, h),
+                'box': (int(x), int(y), int(w), int(h)),
                 'is_live': is_live,
                 'live_probability': live_probability,
+                'emotion': emotion_label,
+                'emotion_probs': emotion_probs,
             })
+
         return results
-    
+
     @staticmethod
     def draw_boxes(frame, recognitions):
         for r in recognitions:
@@ -127,41 +266,94 @@ class FacialRecognitionModel:
             name = r['name']
             is_live = r.get('is_live', True)
             live_probability = r.get('live_probability', 1.0)
+            emotion = r.get('emotion', 'unknown')
+
             if not is_live:
-                color = (0, 0, 255)
+                color = (0, 0, 255)  # red for spoof
             else:
-                color = (0, 255, 0) if name != UNKNOWN_NAME else (0, 165, 255)
+                color = (0, 255, 0) if name != UNKNOWN_NAME else (0, 165, 255)  # green or orange
+
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             label_y = y - 10 if y - 10 > 10 else y + h + 20
             label = f"{name} | live={live_probability:.2f}"
             cv2.putText(frame, label, (x, label_y), cv2.FONT_HERSHEY_COMPLEX, 0.65, color, 2)
+            # emotion label goes just below the name/liveness text
+            cv2.putText(frame, f"feeling: {emotion}", (x, label_y + 22), cv2.FONT_HERSHEY_COMPLEX, 0.5, color, 1)
         return frame
-    
+
     def detect_and_assign(self, frame):
         self.prev_recognitions = self.detect(frame)
-    
-    def async_detect(self, frame):
 
+    def async_detect(self, frame):
         # Filter out NoneType
         if self.detection_thread is None:
             self.detection_thread = Thread(None, self.detect_and_assign, args=(frame,))
             self.detection_thread.start()
 
-        # Check process isn't overlapping
+        # Check process isnt overlapping
         elif not self.detection_thread.is_alive():
             self.detection_thread = Thread(None, self.detect_and_assign, args=(frame,))
             self.detection_thread.start()
-        
+
         return self.draw_boxes(frame, self.prev_recognitions)
-    
-    def run_stream(self, camera_index = 0, standalone = False):
+
+    # -- registration --
+
+    def register_face(self, frame, name: str):
         """
-        Runs the video stream which is directly connected to the deepface model
+        register a single frame under the given name.
+        call this once per captured frame - the UI handles looping and delays.
+        detects a face, crops it, computes the embedding, adds to the in-memory DB, saves pkl.
+        """
+        if not name or not name.strip():
+            print("register_face: skipping, name is empty")
+            return
+
+        person_folder = self.db_path / name
+        person_folder.mkdir(parents=True, exist_ok=True)
+
+        # always save the full frame as an image regardless of whether we find a face
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        image_path = person_folder / f"{name}_{timestamp}.jpg"
+        cv2.imwrite(str(image_path), frame)
+
+        # detect face to get a clean crop for the embedding
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+
+        if len(faces) == 0:
+            print(f"[register_face] No face detected for {name}, image saved but no embedding added")
+            return
+
+        # biggest face = most likely the person standing in front of the camera
+        x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+        face_crop = frame[max(0, y):y + h, max(0, x):x + w]
+
+        if face_crop.size == 0:
+            return
+
+        try:
+            tensor = self._preprocess_face(face_crop)
+            emb = self.face_client.forward(tensor)
+
+            if name not in self.embedding_db:
+                self.embedding_db[name] = []
+            self.embedding_db[name].append(emb)
+            self._save_db()
+            print(f"[register_face] {name}: now has {len(self.embedding_db[name])} embeddings")
+        except Exception as e:
+            print(f"[register_face] Embedding failed for {name}: {e}")
+
+        clear_deepface_cache()
+
+    # -- stream helpers --
+
+    def run_stream(self, camera_index=0, standalone=False):
+        """
+        Runs the video stream which is directly connected to the model.
         Args:
-            camera_index (int): The index of the camera on the machine that the program will capture video from.
-            standalone (bool): Determines whether the stream will run as its own application or as a frame generator. Set to False if plugging into ui such as TKinter and True for running standalone. \
-                You need to unpack the function like a generator though to use standalone. \
-                If using standalone = True, its recommended to use the function FacialRecognitionModel.run_standalone()
+            camera_index (int): The index of the camera on the machine that the program will capture from.
+            standalone (bool): True = runs as its own cv2 window. False = yields frames for a UI to consume.
         """
         self.prev_recognitions = []
         self.detection_active = True
@@ -169,23 +361,20 @@ class FacialRecognitionModel:
             cv2.namedWindow(WINDOW_TITLE)
         vc = cv2.VideoCapture(camera_index)
 
-        if vc.isOpened(): # try to get the first frame
+        if vc.isOpened():
             rval, frame = vc.read()
         else:
             rval = False
             raise RuntimeError("NO CAMERA AAAAAAAAH (maybe try a different camera_index value...)")
-        
-        
+
         while rval:
             rval, frame = vc.read()
             if standalone:
                 key = cv2.waitKey(20)
-                if key == 27: # exit on ESC
+                if key == 27:  # ESC to exit
                     break
-                if key == 100: # toggle detection on D
+                if key == 100:  # D to toggle detection
                     self.detection_active = not self.detection_active
-                if key == ord('r'): # "i hate consistency" - Movi
-                    self.register_face(frame)
             if self.detection_active:
                 display_frame = self.async_detect(frame)
             else:
@@ -196,74 +385,19 @@ class FacialRecognitionModel:
                 cv2.imshow(WINDOW_TITLE, display_frame)
             else:
                 yield display_frame
+
         vc.release()
         if standalone:
             cv2.destroyAllWindows()
 
-    def run_standalone(self, camera_index = 0):
+    def run_standalone(self, camera_index=0):
         stream = self.run_stream(camera_index, True)
         next(stream)
-    
+
     def stop_stream(self):
         self.should_exit = True
 
-    def register_face(self, frame):
-        name = input("Enter name for this new person: ").strip()
 
-        if name == "":
-            print("Registration cancelled. Name cannot be empty.")
-            return
-
-        person_folder = os.path.join(self.db_path, name)
-        os.makedirs(person_folder, exist_ok=True)
-
-        print("\nRegistration started.")
-        print("Slowly turn your head left and right.")
-        print("Try front view, side view, smiling, and different lighting.")
-        print("Capturing 12 face images...\n")
-
-        captured = 0
-
-        while captured < 12:
-            ret, frame = cv2.VideoCapture(0).read()
-
-            if not ret:
-                continue
-
-            display_frame = frame.copy()
-
-            cv2.putText(
-                display_frame,
-                f"Registering {name}: {captured + 1}/12",
-                (30, 40),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 255, 0),
-                2
-            )
-
-            cv2.putText(
-                display_frame,
-                "Slowly turn your head left and right",
-                (30, 80),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (255, 255, 255),
-                2
-            )
-
-            cv2.imshow("Facial Recognition Attendance System", display_frame)
-
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            image_path = os.path.join(person_folder, f"{name}_{timestamp}.jpg")
-
-            cv2.imwrite(image_path, frame)
-            captured += 1
-
-            cv2.waitKey(500)
-
-        clear_deepface_cache()
-        print(f"Registered {captured} images for {name}.")
 if __name__ == "__main__":
     model = FacialRecognitionModel(Path("debug_data"))
     model.run_standalone()
