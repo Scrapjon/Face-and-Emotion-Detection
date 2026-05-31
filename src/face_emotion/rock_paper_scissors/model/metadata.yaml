@@ -1,0 +1,25 @@
+description: Ultralytics YOLO26n model trained on data.yaml
+author: Ultralytics
+date: '2026-05-31T08:58:26.694224'
+version: 8.4.57
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+batch: 1
+imgsz:
+- 640
+- 640
+names:
+  0: Paper
+  1: Rock
+  2: Scissors
+args:
+  data: null
+  batch: 1
+  fraction: 1.0
+  keras: false
+  int8: false
+  nms: false
+channels: 3
+end2end: true
