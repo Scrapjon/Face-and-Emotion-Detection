@@ -188,4 +188,4 @@ cython_debug/
 *.pkl
 .vscode
 #
-src/face_emotion/face_recognition/model/new_weights.weights.h5
+new_weights.weights.h5
