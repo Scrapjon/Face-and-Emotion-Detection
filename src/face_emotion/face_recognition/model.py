@@ -225,7 +225,7 @@ class FacialRecognitionModel:
                 is_live = False
                 live_probability = 0.0
 
-            # emotion - run even for spoofs, its kinda funny to see what emotion a photo has
+            # emotion
             emotion_label = 'unknown'
             emotion_probs: dict = {}
             if self.emotion_detector.is_available():

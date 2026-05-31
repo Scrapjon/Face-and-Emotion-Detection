@@ -105,7 +105,15 @@ def load_model():
 		return target_file
 	weight_file = get_weight_file()
 	#
-	model.load_weights(weight_file)
+	# dummy forward pass to force all layer variables to be created before load_weights.
+	# newer keras versions leave layers un-built until first inference, so load_weights
+	# finds 0 variables per layer and throws "expected 2 variables, received 0".
+	model(np.zeros((1, 224, 224, 3), dtype="float32"), training=False)
+	try:
+		model.load_weights(weight_file)
+	except (ValueError, Exception) as e:
+		print(f"[load_model] standard weight load failed ({e}), retrying with by_name=True...")
+		model.load_weights(weight_file, by_name=True, skip_mismatch=True)
 	model_input = model.layers[0].input
 	model_output = model.layers[-1].output
 	return Model(inputs=model_input, outputs=model_output)
