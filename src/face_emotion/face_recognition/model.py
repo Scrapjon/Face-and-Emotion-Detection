@@ -15,8 +15,8 @@ from face_emotion.rock_paper_scissors.rock_paper_scissors import Rock_Paper_Scis
 
 CAMERA_FPS_CAP = 30
 
-UNKNOWN_NAME = "WHO ARE YOU???"
-WINDOW_TITLE = "IMAGE RECOGNITION WOAHHHHH!"
+UNKNOWN_NAME = "UNKOWN"
+WINDOW_TITLE = "Facial Recognition"
 
 # cosine similarity threshold. same person if score >= this. tune if recognition is too strict/loose
 COSINE_THRESHOLD = 0.5
@@ -273,7 +273,8 @@ class FacialRecognitionModel:
             is_live = r.get('is_live', True)
             live_probability = r.get('live_probability', 1.0)
             emotion = r.get('emotion', 'unknown')
-
+            rpc = r.get('rpc_gesture', 'none')
+            
             if not is_live:
                 color = (0, 0, 255)  # red for spoof
             else:
@@ -287,6 +288,8 @@ class FacialRecognitionModel:
             cv2.putText(frame, label, (x, label_y), cv2.FONT_HERSHEY_COMPLEX, 0.65, color, 2)
             # emotion label goes just below the name/liveness text
             cv2.putText(frame, f"feeling: {emotion}", (x, label_y + 22), cv2.FONT_HERSHEY_COMPLEX, 0.5, color, 1)
+            if rpc != 'none':
+                cv2.putText(frame, f"rpc: {rpc}", (x, label_y + 44), cv2.FONT_HERSHEY_COMPLEX, 0.5, color, 1)
         return frame
 
     def detect_and_assign(self, frame):
