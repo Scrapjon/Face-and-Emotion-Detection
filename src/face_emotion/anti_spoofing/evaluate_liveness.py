@@ -5,8 +5,8 @@ import numpy as np
 import tensorflow as tf
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 
-MODEL_PATH = Path("models/liveness_model.keras")
-VAL_DIR = Path("data/liveness_dataset/val")
+MODEL_PATH = Path("../../models/liveness_model.h5")
+VAL_DIR = Path("../../data/liveness_dataset/val")
 IMG_SIZE = (224, 224)
 BATCH_SIZE = 16
 
