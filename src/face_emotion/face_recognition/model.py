@@ -4,12 +4,14 @@ import warnings
 from pathlib import Path
 from threading import Thread
 from datetime import datetime
+from typing import Optional
 import cv2
 import numpy as np
 from face_emotion.anti_spoofing import LivenessDetector
 from face_emotion.emotion_recognition.emotion_detector import EmotionDetector
 from face_emotion.face_recognition.face_model import FaceRecognitionClient
 from face_emotion.gender_detection.gender_model import GenderDetector
+from face_emotion.rock_paper_scissors.rock_paper_scissors import Rock_Paper_Scissors
 
 CAMERA_FPS_CAP = 30
 
@@ -50,6 +52,7 @@ class FacialRecognitionModel:
         ),
         liveness_threshold: float = 0.60,
         cosine_threshold: float = COSINE_THRESHOLD,
+        do_rpc: Optional[bool] = False
     ) -> None:
         self.db_path = Path(db_path)
         self.cosine_threshold = cosine_threshold
@@ -57,10 +60,14 @@ class FacialRecognitionModel:
 
         # liveness / anti-spoofing
         self.liveness = LivenessDetector(liveness_model_path, threshold=liveness_threshold)
-
+        
         # emotion detector (separate model, 48x48 grayscale -> 7-class softmax)
         self.emotion_detector = EmotionDetector(emotion_model_path)
 
+        # rock paper scissors (seperat model, 640x640, 3-class)
+        self.do_rpc = do_rpc
+        self.rock_paper_scissors = Rock_Paper_Scissors()
+        
         # our custom fine-tuned VGGFace model for face recognition
         print("[FacialRecognitionModel] Loading face recognition client...")
         self.face_client = FaceRecognitionClient()
@@ -233,6 +240,19 @@ class FacialRecognitionModel:
                     print(f"Recognition failed: {e}")
                     name = UNKNOWN_NAME
 
+            # rock paper scissors
+            rpc_gesture = ""
+            if self.do_rpc:
+                try:
+                    prediciton = self.rock_paper_scissors.predict(frame)
+                    match prediciton:
+                        case 0: rpc_gesture = "paper"
+                        case 1: rpc_gesture = "rock"
+                        case 2: rpc_gesture = "scissors"
+                except Exception as e:
+                    print(f"Rock Paper Scissors failed: {e}")
+                    rpc_gesture = "none"
+            
             results.append({
                 'name': name,
                 'box': (int(x), int(y), int(w), int(h)),
@@ -240,6 +260,7 @@ class FacialRecognitionModel:
                 'live_probability': live_probability,
                 'emotion': emotion_label,
                 'emotion_probs': emotion_probs,
+                'rpc_gesture': rpc_gesture,
             })
 
         return results
