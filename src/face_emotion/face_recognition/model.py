@@ -83,14 +83,23 @@ class FacialRecognitionModel:
         self.emotion_detector = EmotionDetector(emotion_model_path)
 
         # gender detector - load once here, not on every detect() call
-        self.gender_detector = GenderDetector(str(gender_model_path))
-
+        try:
+            self.gender_detector = GenderDetector(str(gender_model_path))
+        except:
+            pass
+        
+        try:
         # glasses detector
-        self.glasses_detector = GlassesDetector(glasses_model_path)
+            self.glasses_detector = GlassesDetector(glasses_model_path)
+        except:
+            pass
 
         # rock paper scissors (seperat model, 640x640, 3-class)
-        self.do_rpc = do_rpc
-        self.rock_paper_scissors = Rock_Paper_Scissors()
+        try:
+            self.do_rpc = do_rpc
+            self.rock_paper_scissors = Rock_Paper_Scissors()
+        except:
+            pass
         
         # our custom fine-tuned VGGFace model for face recognition
         print("[FacialRecognitionModel] Loading face recognition client...")
