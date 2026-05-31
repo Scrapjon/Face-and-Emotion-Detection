@@ -1,8 +1,3 @@
-"""Runtime liveness detector for face anti-spoofing.
-
-The model is trained by train_liveness.py and saved as a Keras .h5 file.
-It classifies a cropped face as either live/real or spoof/fake.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,11 +9,11 @@ import cv2
 import numpy as np
 
 class LivenessDetector:
-    """Loads and runs the trained anti-spoofing model."""
+    
 
     def __init__(
         self,
-        model_path: str | Path = Path("models", "liveness_model.h5"),
+        model_path: str | Path = Path("../../models", "liveness_model.h5"),
         threshold: float = 0.60,
         input_size: Tuple[int, int] = (224, 224),
     ) -> None:

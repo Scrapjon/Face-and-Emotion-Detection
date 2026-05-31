@@ -8,6 +8,7 @@ import pandas as pd
 from deepface import DeepFace
 from dataclasses import dataclass
 from face_emotion.anti_spoofing import LivenessDetector
+from face_emotion.gender_detection.gender_model import GenderDetector
 
 CAMERA_FPS_CAP = 30
 
@@ -16,7 +17,6 @@ WINDOW_TITLE = "IMAGE RECOGNITION WOAHHHHH!"
 
 
 def clear_deepface_cache():
-    """Clear any cached DeepFace data if the API is available."""
     try:
         if hasattr(DeepFace, "clear_cache"):
             DeepFace.clear_cache()
@@ -49,7 +49,8 @@ class FacialRecognitionModel:
     ) -> None:
         self.db_path = db_path
         self.liveness = LivenessDetector(liveness_model_path, threshold=liveness_threshold)
-    
+        self.gender_detector = GenderDetector("models/gender_model.h5")
+
     def detect(self, frame):
         """
         detects faces (duh!)
@@ -90,14 +91,27 @@ class FacialRecognitionModel:
 
             # Liveness / anti-spoofing is checked before trusting the identity match.
             # A phone-screen or printed-photo face should be labelled as SPOOF and blocked.
+            
+            gender_label = "Unknown"
+            gender_confidence = 0.0
+
             if w > 0 and h > 0:
                 face_crop = frame[max(0, y):max(0, y) + h, max(0, x):max(0, x) + w]
+
                 try:
                     is_live, live_probability = self.liveness.check(face_crop)
                 except Exception as e:
                     print(f"Liveness check failed: {e}")
                     is_live = False
                     live_probability = 0.0
+
+                if is_live:
+                    try:
+                        gender_label, gender_confidence = self.gender_detector.predict(face_crop)
+                    except Exception as e:
+                        print(f"Gender prediction failed: {e}")
+                        gender_label = "Unknown"
+                        gender_confidence = 0.0
 
             if not is_live:
                 name = "SPOOF / FAKE FACE"
@@ -117,6 +131,8 @@ class FacialRecognitionModel:
                 'box': (x, y, w, h),
                 'is_live': is_live,
                 'live_probability': live_probability,
+                'gender': gender_label,
+                'gender_confidence': gender_confidence,
             })
         return results
     
@@ -127,13 +143,16 @@ class FacialRecognitionModel:
             name = r['name']
             is_live = r.get('is_live', True)
             live_probability = r.get('live_probability', 1.0)
+            gender = r.get('gender', "Unknown")
+            gender_confidence = r.get('gender_confidence', 0.0)
             if not is_live:
                 color = (0, 0, 255)
+                label = f"{name} | live={live_probability:.2f}"
             else:
                 color = (0, 255, 0) if name != UNKNOWN_NAME else (0, 165, 255)
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             label_y = y - 10 if y - 10 > 10 else y + h + 20
-            label = f"{name} | live={live_probability:.2f}"
+            label = f"{name} | {gender}={gender_confidence:.2f} | live={live_probability:.2f}"
             cv2.putText(frame, label, (x, label_y), cv2.FONT_HERSHEY_COMPLEX, 0.65, color, 2)
         return frame
     
