@@ -6,10 +6,10 @@ from threading import Thread
 from datetime import datetime
 import cv2
 import numpy as np
-from deepface import DeepFace
 from face_emotion.anti_spoofing import LivenessDetector
 from face_emotion.emotion_recognition.emotion_detector import EmotionDetector
 from face_emotion.face_recognition.face_model import FaceRecognitionClient
+from face_emotion.gender_detection.gender_model import GenderDetector
 
 CAMERA_FPS_CAP = 30
 
@@ -28,21 +28,6 @@ SUPPORTED_IMG_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff'}
 # opencv's built-in haar cascade for frontal face detection
 HAAR_CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 
-
-def clear_deepface_cache():
-    """Clear any cached DeepFace data if the API is available."""
-    try:
-        if hasattr(DeepFace, "clear_cache"):
-            DeepFace.clear_cache()
-            return
-    except Exception:
-        pass
-    try:
-        from deepface.commons import functions as deepface_functions
-        if hasattr(deepface_functions, "clear_cache"):
-            deepface_functions.clear_cache()
-    except Exception:
-        pass
 
 
 def _cosine_sim(a, b) -> float:
@@ -275,7 +260,9 @@ class FacialRecognitionModel:
 
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             label_y = y - 10 if y - 10 > 10 else y + h + 20
-            label = f"{name} | live={live_probability:.2f}"
+            
+            gender, gender_confidence = "GENDERLESS", 1 # placeholder
+            label = f"{name} | {gender}={gender_confidence:.2f} | live={live_probability:.2f}"
             cv2.putText(frame, label, (x, label_y), cv2.FONT_HERSHEY_COMPLEX, 0.65, color, 2)
             # emotion label goes just below the name/liveness text
             cv2.putText(frame, f"feeling: {emotion}", (x, label_y + 22), cv2.FONT_HERSHEY_COMPLEX, 0.5, color, 1)
