@@ -63,7 +63,7 @@ class FacialRecognitionModel:
     def __init__(
         self,
         db_path: Path | str = Path("data", "classification_data", "train_data"),
-        liveness_model_path: Path | str = Path("src", "models", "liveness_model.h5"),
+        liveness_model_path: Path | str = Path("src", "models", "liveness_model.keras"),
         emotion_model_path: Path | str = Path(
             "src", "face_emotion", "emotion_recognition", "fine_tuned_models", "ft_emotion_model.h5"
         ),

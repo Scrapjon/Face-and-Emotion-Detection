@@ -1,4 +1,4 @@
-import keras
+import tensorflow as tf
 import cv2
 from typing import Optional
 #
@@ -9,7 +9,7 @@ class Rock_Paper_Scissors():
 	):
 		""""""
 		self.model_path = path
-		self.model = keras.layers.TFSMLayer(self.model_path, call_endpoint='serving_default')
+		self.model = tf.keras.layers.TFSMLayer(self.model_path, call_endpoint='serving_default')
 	def predict(self, img):
 		"""
 		Predict held gesture in the image

@@ -1,7 +1,6 @@
 import warnings
 import cv2
 import numpy as np
-import tensorflow as tf
 from pathlib import Path
 
 # alphabetical keras ordering: glasses=0, no_glasses=1
@@ -42,7 +41,8 @@ class GlassesDetector:
             return
 
         try:
-            self.model = tf.keras.models.load_model(str(model_path), compile=False)
+            import keras
+            self.model = keras.models.load_model(str(model_path), compile=False)
             print(f"[GlassesDetector] SUCCESS: Model loaded into memory!")
         except Exception as e:
             warnings.warn(f"[GlassesDetector] CRASH DURING LOAD: {e}")
