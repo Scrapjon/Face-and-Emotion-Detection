@@ -3,6 +3,7 @@ from __future__ import annotations
 import warnings
 from pathlib import Path
 from typing import Tuple
+import tensorflow as tf
 
 import cv2
 import numpy as np
@@ -28,8 +29,7 @@ class EmotionDetector:
             return
 
         try:
-            import keras
-            self.model = keras.models.load_model(str(model_path))
+            self.model = tf.keras.models.load_model(str(model_path))
             print(f"[EmotionDetector] Loaded model from {model_path}")
         except Exception as e:
             warnings.warn(f"[EmotionDetector] Failed to load model: {e}")

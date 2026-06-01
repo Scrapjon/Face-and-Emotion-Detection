@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Tuple
 
 import tensorflow as tf
-import keras
 import cv2
 import numpy as np
 
@@ -23,7 +22,7 @@ class LivenessDetector:
         self.model = None
 
         if self.model_path.exists():
-            self.model = keras.models.load_model(self.model_path)
+            self.model = tf.keras.models.load_model(self.model_path)
         else:
             print(f"[LivenessDetector] No model found at {self.model_path}. Liveness check is disabled.")
 
