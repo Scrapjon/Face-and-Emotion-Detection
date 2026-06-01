@@ -95,13 +95,13 @@ model.summary()
 # %%
 # -- Preparing dataset --
 
-import shutil
-
 script_dir = os.path.dirname(__file__)
 data_dir = os.path.abspath(os.path.join(script_dir, "../../data/race_data"))
 
 '''
 CREATING TRAIN FOLDER FROM RAW DATA. NO LONGER NEEDED AFTER FIRST RUN:
+
+import shutil
 
 # Path to raw UTKFace cropped folder (labels part of filename: [age]_[gender]_[race]_[fate&time].jpg)
 raw_data_dir = data_dir + '/raw_train'
