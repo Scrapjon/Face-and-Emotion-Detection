@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Face and Emotion Detection"
 requires-python = ">=3.10"
 dependencies = [
-    "tensorflow>=2.16",
+    "tensorflow=1.9.0",
     "tf-keras",
     "opencv-python",
     "python-dotenv",
