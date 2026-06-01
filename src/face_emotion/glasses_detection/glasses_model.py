@@ -3,28 +3,24 @@ import cv2
 import numpy as np
 from pathlib import Path
 
-
 # alphabetical keras ordering: glasses=0, no_glasses=1
 # sigmoid >= 0.5 -> class 1 (no glasses)
 # sigmoid <  0.5 -> class 0 (glasses detected)
-IMG_SIZE = (64, 64)  # what the model was trained on
+
+# IMPORTANT: must match IMG_SIZE in train_glasses.py
+IMG_SIZE = (96, 96)
 
 
 class GlassesDetector:
     def __init__(self, model_path: Path | str = None):
         self.model = None
-
         if model_path is not None:
             model_path = Path(model_path)
         else:
-            # Plan A: Search dynamically relative to this file's location
             current_dir = Path(__file__).resolve().parent
-            
-            # Walk up folders trying to find 'src/models/glasses_model.h5'
             target_path = Path("src", "models", "glasses_model.h5")
             anchor = current_dir
-            
-            # Check up to 4 folders up for either 'src/models/...' or just 'models/...'
+
             for _ in range(4):
                 if (anchor / target_path).exists():
                     model_path = anchor / target_path
@@ -34,7 +30,6 @@ class GlassesDetector:
                     break
                 anchor = anchor.parent
 
-            # Plan B: Absolute Fallback if it couldn't find it dynamically
             if model_path is None or not model_path.exists():
                 model_path = Path("src", "models", "glasses_model.h5")
 
@@ -56,15 +51,15 @@ class GlassesDetector:
         return self.model is not None
 
     def preprocess_face(self, face_bgr: np.ndarray) -> np.ndarray:
-        resized  = cv2.resize(face_bgr, IMG_SIZE)
-        rgb      = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        tensor   = rgb.astype("float32") / 255.0
+        resized = cv2.resize(face_bgr, IMG_SIZE)
+        rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        tensor  = rgb.astype("float32") / 255.0   # [0,1]; model's Rescaling layer handles [-1,1]
         return np.expand_dims(tensor, axis=0)
 
     def predict(self, face_bgr: np.ndarray) -> tuple[str, float]:
         """
-        returns ('Glasses', confidence) or ('No Glasses', confidence).
-        falls back to ('Unknown', 0.0) if the model isnt loaded or the crop is junk.
+        Returns ('Glasses', confidence) or ('No Glasses', confidence).
+        Falls back to ('Unknown', 0.0) if the model isn't loaded or the crop is bad.
         """
         if self.model is None or face_bgr is None or face_bgr.size == 0:
             return ("Unknown", 0.0)

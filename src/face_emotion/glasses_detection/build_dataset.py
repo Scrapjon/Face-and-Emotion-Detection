@@ -24,7 +24,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 # ---- config ----
-OUT_DIR        = Path("data/glasses_dataset")
+OUT_DIR        = Path("src/data/glasses_dataset")
 FACE_MIN_SIZE  = 60          # ignore faces smaller than this
 IMG_SIZE       = (224, 224)  # model input size
 MAX_SYNTH      = 600         # max synthetic glasses examples to generate

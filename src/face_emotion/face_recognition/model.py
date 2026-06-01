@@ -13,7 +13,7 @@ from face_emotion.emotion_recognition.emotion_detector import EmotionDetector
 from face_emotion.face_recognition.face_model import FaceRecognitionClient
 from face_emotion.gender_detection.gender_model import GenderDetector
 from face_emotion.glasses_detection.glasses_model import GlassesDetector
-from face_emotion.race_detection.race_detector import RaceDetector
+from face_emotion.race_detection import RaceDetector
 from face_emotion.rock_paper_scissors.rock_paper_scissors import Rock_Paper_Scissors
 
 CAMERA_FPS_CAP = 30
