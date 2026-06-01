@@ -4,17 +4,21 @@ import warnings
 from pathlib import Path
 from threading import Thread
 from datetime import datetime
+from typing import Optional
 import cv2
 import numpy as np
+from deepface import DeepFace
 from face_emotion.anti_spoofing import LivenessDetector
 from face_emotion.emotion_recognition.emotion_detector import EmotionDetector
 from face_emotion.face_recognition.face_model import FaceRecognitionClient
 from face_emotion.gender_detection.gender_model import GenderDetector
+from face_emotion.glasses_detection.glasses_model import GlassesDetector
+from face_emotion.rock_paper_scissors.rock_paper_scissors import Rock_Paper_Scissors
 
 CAMERA_FPS_CAP = 30
 
-UNKNOWN_NAME = "WHO ARE YOU???"
-WINDOW_TITLE = "IMAGE RECOGNITION WOAHHHHH!"
+UNKNOWN_NAME = "UNKOWN"
+WINDOW_TITLE = "Facial Recognition"
 
 # cosine similarity threshold. same person if score >= this. tune if recognition is too strict/loose
 COSINE_THRESHOLD = 0.5
@@ -28,6 +32,20 @@ SUPPORTED_IMG_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff'}
 # opencv's built-in haar cascade for frontal face detection
 HAAR_CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 
+
+def clear_deepface_cache():
+    try:
+        if hasattr(DeepFace, "clear_cache"):
+            DeepFace.clear_cache()
+            return
+    except Exception:
+        pass
+    try:
+        from deepface.commons import functions as deepface_functions
+        if hasattr(deepface_functions, "clear_cache"):
+            deepface_functions.clear_cache()
+    except Exception:
+        pass
 
 
 def _cosine_sim(a, b) -> float:
@@ -48,19 +66,42 @@ class FacialRecognitionModel:
         emotion_model_path: Path | str = Path(
             "src", "face_emotion", "emotion_recognition", "fine_tuned_models", "ft_emotion_model.h5"
         ),
+        gender_model_path: Path | str = Path("src","models", "gender_model.h5"),
+        glasses_model_path: Path | str = Path("src","models","glasses_model.h5"),
         liveness_threshold: float = 0.60,
         cosine_threshold: float = COSINE_THRESHOLD,
+        do_rpc: Optional[bool] = False
     ) -> None:
-        self.db_path = Path(db_path)
+        self.db_path = Path(db_path) 
+        os.makedirs(self.db_path, exist_ok=True)
         self.cosine_threshold = cosine_threshold
         self.detection_active = True
 
         # liveness / anti-spoofing
         self.liveness = LivenessDetector(liveness_model_path, threshold=liveness_threshold)
-
+        
         # emotion detector (separate model, 48x48 grayscale -> 7-class softmax)
         self.emotion_detector = EmotionDetector(emotion_model_path)
 
+        # gender detector - load once here, not on every detect() call
+        try:
+            self.gender_detector = GenderDetector(str(gender_model_path))
+        except Exception as e:
+            print(f"gender_detector failed to load due to: {e}")
+        
+        try:
+        # glasses detector
+            self.glasses_detector = GlassesDetector(glasses_model_path)
+        except Exception as e:
+            print(f"glasses_detector failed to load due to: {e}")
+
+        # rock paper scissors (seperat model, 640x640, 3-class)
+        try:
+            self.do_rpc = do_rpc
+            self.rock_paper_scissors = Rock_Paper_Scissors()
+        except Exception as e:
+            print(f"rock_paper_scissors failed to load due to: {e}")
+        
         # our custom fine-tuned VGGFace model for face recognition
         print("[FacialRecognitionModel] Loading face recognition client...")
         self.face_client = FaceRecognitionClient()
@@ -178,8 +219,8 @@ class FacialRecognitionModel:
     def detect(self, frame) -> list[dict]:
         """
         detects faces (duh!)
-        runs haar cascade -> liveness -> emotion -> identity on each detected face.
-        returns list of dicts: {name, box, is_live, live_probability, emotion, emotion_probs}
+        runs haar cascade -> liveness -> emotion -> gender -> identity on each detected face.
+        returns list of dicts: {name, box, is_live, live_probability, emotion, emotion_probs, gender, gender_confidence}
         """
         results = []
 
@@ -210,7 +251,7 @@ class FacialRecognitionModel:
                 is_live = False
                 live_probability = 0.0
 
-            # emotion
+            # emotion - run even for spoofs, its kinda funny to see what emotion a photo has
             emotion_label = 'unknown'
             emotion_probs: dict = {}
             if self.emotion_detector.is_available():
@@ -218,6 +259,24 @@ class FacialRecognitionModel:
                     emotion_label, emotion_probs = self.emotion_detector.detect(face_crop)
                 except Exception as e:
                     print(f"Emotion detection failed: {e}")
+
+            # gender - only bother for live faces
+            gender_label = "Unknown"
+            gender_confidence = 0.0
+            if is_live:
+                try:
+                    gender_label, gender_confidence = self.gender_detector.predict(face_crop)
+                except Exception as e:
+                    print(f"Gender prediction failed: {e}")
+
+            # glasses - only for live faces because showing a photo of someone with glasses is not interesting
+            glasses_label = "Unknown"
+            glasses_confidence = 0.0
+            
+            try:
+                glasses_label, glasses_confidence = self.glasses_detector.predict(face_crop)
+            except Exception as e:
+                print(f"Glasses detection failed: {e}")
 
             # identity recognition
             if not is_live:
@@ -233,6 +292,19 @@ class FacialRecognitionModel:
                     print(f"Recognition failed: {e}")
                     name = UNKNOWN_NAME
 
+            # rock paper scissors
+            rpc_gesture = ""
+            if self.do_rpc:
+                try:
+                    prediciton = self.rock_paper_scissors.predict(frame)
+                    match prediciton:
+                        case 0: rpc_gesture = "paper"
+                        case 1: rpc_gesture = "rock"
+                        case 2: rpc_gesture = "scissors"
+                except Exception as e:
+                    print(f"Rock Paper Scissors failed: {e}")
+                    rpc_gesture = "none"
+            
             results.append({
                 'name': name,
                 'box': (int(x), int(y), int(w), int(h)),
@@ -240,6 +312,11 @@ class FacialRecognitionModel:
                 'live_probability': live_probability,
                 'emotion': emotion_label,
                 'emotion_probs': emotion_probs,
+                'gender': gender_label,
+                'gender_confidence': gender_confidence,
+                'glasses': glasses_label,
+                'glasses_confidence': glasses_confidence,
+                'rpc_gesture': rpc_gesture,
             })
 
         return results
@@ -252,7 +329,11 @@ class FacialRecognitionModel:
             is_live = r.get('is_live', True)
             live_probability = r.get('live_probability', 1.0)
             emotion = r.get('emotion', 'unknown')
-
+            gender = r.get('gender', 'Unknown')
+            gender_confidence = r.get('gender_confidence', 0.0)
+            glasses = r.get('glasses', 'Unknown')
+            rpc = r.get('rpc_gesture', 'none')
+            
             if not is_live:
                 color = (0, 0, 255)  # red for spoof
             else:
@@ -260,12 +341,12 @@ class FacialRecognitionModel:
 
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             label_y = y - 10 if y - 10 > 10 else y + h + 20
-            
-            gender, gender_confidence = "GENDERLESS", 1 # placeholder
-            label = f"{name} | {gender}={gender_confidence:.2f} | live={live_probability:.2f}"
+            label = f"{name} | {gender} | {glasses} | live={live_probability:.2f}"
             cv2.putText(frame, label, (x, label_y), cv2.FONT_HERSHEY_COMPLEX, 0.65, color, 2)
             # emotion label goes just below the name/liveness text
             cv2.putText(frame, f"feeling: {emotion}", (x, label_y + 22), cv2.FONT_HERSHEY_COMPLEX, 0.5, color, 1)
+            if rpc != 'none':
+                cv2.putText(frame, f"rpc: {rpc}", (x, label_y + 44), cv2.FONT_HERSHEY_COMPLEX, 0.5, color, 1)
         return frame
 
     def detect_and_assign(self, frame):
