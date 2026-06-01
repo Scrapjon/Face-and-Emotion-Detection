@@ -476,7 +476,7 @@ requires-dist = [
     { name = "python-dotenv" },
     { name = "scikit-learn" },
     { name = "seaborn" },
-    { name = "tensorflow" },
+    { name = "tensorflow", specifier = ">=2.16" },
     { name = "tf-keras" },
     { name = "ultralytics" },
 ]
