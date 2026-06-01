@@ -67,12 +67,13 @@ class FacialRecognitionModel:
             "src", "face_emotion", "emotion_recognition", "fine_tuned_models", "ft_emotion_model.h5"
         ),
         gender_model_path: Path | str = Path("src","models", "gender_model.h5"),
-        glasses_model_path: Path | str = Path("src", "models", "glasses_model.h5"),
+        glasses_model_path: Path | str = Path("src","models","glasses_model.h5"),
         liveness_threshold: float = 0.60,
         cosine_threshold: float = COSINE_THRESHOLD,
         do_rpc: Optional[bool] = False
     ) -> None:
-        self.db_path = Path(db_path)
+        self.db_path = Path(db_path) 
+        os.makedirs(self.db_path, exist_ok=True)
         self.cosine_threshold = cosine_threshold
         self.detection_active = True
 
@@ -85,21 +86,21 @@ class FacialRecognitionModel:
         # gender detector - load once here, not on every detect() call
         try:
             self.gender_detector = GenderDetector(str(gender_model_path))
-        except:
-            pass
+        except Exception as e:
+            print(f"gender_detector failed to load due to: {e}")
         
         try:
         # glasses detector
             self.glasses_detector = GlassesDetector(glasses_model_path)
-        except:
-            pass
+        except Exception as e:
+            print(f"glasses_detector failed to load due to: {e}")
 
         # rock paper scissors (seperat model, 640x640, 3-class)
         try:
             self.do_rpc = do_rpc
             self.rock_paper_scissors = Rock_Paper_Scissors()
-        except:
-            pass
+        except Exception as e:
+            print(f"rock_paper_scissors failed to load due to: {e}")
         
         # our custom fine-tuned VGGFace model for face recognition
         print("[FacialRecognitionModel] Loading face recognition client...")
@@ -271,11 +272,11 @@ class FacialRecognitionModel:
             # glasses - only for live faces because showing a photo of someone with glasses is not interesting
             glasses_label = "Unknown"
             glasses_confidence = 0.0
-            if is_live:
-                try:
-                    glasses_label, glasses_confidence = self.glasses_detector.predict(face_crop)
-                except Exception as e:
-                    print(f"Glasses detection failed: {e}")
+            
+            try:
+                glasses_label, glasses_confidence = self.glasses_detector.predict(face_crop)
+            except Exception as e:
+                print(f"Glasses detection failed: {e}")
 
             # identity recognition
             if not is_live:

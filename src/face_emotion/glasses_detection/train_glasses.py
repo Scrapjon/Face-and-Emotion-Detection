@@ -141,7 +141,6 @@ def main():
     print(f"\nBest val accuracy : {best_acc:.4f}")
     print(f"Best val AUC      : {best_auc:.4f}")
     print(f"Model saved       -> {MODEL_PATH}")
-    print(f"\nNote: for best real-world accuracy, supplement the synthetic")
     print(f"      dataset with MeGlass: https://tinyurl.com/meglass-dataset")
 
 
