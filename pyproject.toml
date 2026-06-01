@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Face and Emotion Detection"
 requires-python = ">=3.10"
 dependencies = [
-    "tensorflow",
+    "tensorflow>=2.16",
     "tf-keras",
     "opencv-python",
     "python-dotenv",
@@ -20,7 +20,8 @@ dependencies = [
     "pyinstaller",
     "protobuf == 6.31.1", # required for pillow ImageTK module and tensorflow, this version is compatible with both
     "scikit-learn",
-    "seaborn"
+    "seaborn",
+    "gdown>=6.1.0",
 ]
 
 [tool.setuptools.packages.find]

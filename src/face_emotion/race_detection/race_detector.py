@@ -13,7 +13,8 @@ class RaceDetector:
         self.file_id = '1uJqSEqgH3ovZk0pFU3CloGl54Kg4xZj7'
         self.class_names = ['Asian', 'Black', 'Indian', 'Others', 'White']
         self.img_size = (224, 224)
-
+        self.model = None
+        
         if model_path is None:
             # Get directory of THIS file (src/face_emotion/race_detection/)
             current_dir = Path(__file__).resolve().parent

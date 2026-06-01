@@ -189,3 +189,5 @@ cython_debug/
 .vscode
 #
 new_weights.weights.h5
+
+ft_race_model.h5
