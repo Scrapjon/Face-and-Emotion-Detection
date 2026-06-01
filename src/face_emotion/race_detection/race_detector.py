@@ -2,7 +2,7 @@ import os
 import gdown
 import cv2
 import numpy as np
-import tensorflow as tf
+import keras
 from pathlib import Path
 
 class RaceDetector:
@@ -31,7 +31,7 @@ class RaceDetector:
                 gdown.download(url, str(model_path), quiet=False)
 
         try:
-            self.model = tf.keras.models.load_model(str(model_path), compile=False)
+            self.model = keras.models.load_model(str(model_path), compile=False)
             print('[RaceDetector] Success: Model loaded from {model_pah}.')
         except Exception as e:
             print(f'[RaceDetector] Failed to load model: {e}')
