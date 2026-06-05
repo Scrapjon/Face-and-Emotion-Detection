@@ -3,42 +3,63 @@ import cv2
 import numpy as np
 from pathlib import Path
 
-
 # alphabetical keras ordering: glasses=0, no_glasses=1
 # sigmoid >= 0.5 -> class 1 (no glasses)
 # sigmoid <  0.5 -> class 0 (glasses detected)
-IMG_SIZE = (64, 64)  # what the model was trained on
+
+# IMPORTANT: must match IMG_SIZE in train_glasses.py
+IMG_SIZE = (96, 96)
 
 
 class GlassesDetector:
-    def __init__(self, model_path: Path | str = Path("src/models/glasses_model.h5")):
+    def __init__(self, model_path: Path | str = None):
         self.model = None
-        model_path = Path(model_path)
+        if model_path is not None:
+            model_path = Path(model_path)
+        else:
+            current_dir = Path(__file__).resolve().parent
+            target_path = Path("src", "models", "glasses_model.h5")
+            anchor = current_dir
+
+            for _ in range(4):
+                if (anchor / target_path).exists():
+                    model_path = anchor / target_path
+                    break
+                if (anchor / "models" / "glasses_model.h5").exists():
+                    model_path = anchor / "models" / "glasses_model.h5"
+                    break
+                anchor = anchor.parent
+
+            if model_path is None or not model_path.exists():
+                model_path = Path("src", "models", "glasses_model.h5")
+
+        print(f"\n[GlassesDetector] TARGET PATH RESOLVED TO:\n -> {model_path.resolve()}")
+        print(f"[GlassesDetector] FILE EXISTS: {model_path.exists()}\n")
 
         if not model_path.exists():
-            warnings.warn(f"[GlassesDetector] No model at {model_path}. Glasses detection disabled.")
+            warnings.warn(f"[GlassesDetector] No model found at {model_path.resolve()}. Detector disabled.")
             return
 
         try:
             import keras
             self.model = keras.models.load_model(str(model_path), compile=False)
-            print(f"[GlassesDetector] Loaded model from {model_path}")
+            print(f"[GlassesDetector] SUCCESS: Model loaded into memory!")
         except Exception as e:
-            warnings.warn(f"[GlassesDetector] Failed to load model: {e}")
+            warnings.warn(f"[GlassesDetector] CRASH DURING LOAD: {e}")
 
     def is_available(self) -> bool:
         return self.model is not None
 
     def preprocess_face(self, face_bgr: np.ndarray) -> np.ndarray:
-        resized  = cv2.resize(face_bgr, IMG_SIZE)
-        rgb      = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        tensor   = rgb.astype("float32") / 255.0
+        resized = cv2.resize(face_bgr, IMG_SIZE)
+        rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        tensor  = rgb.astype("float32") / 255.0   # [0,1]; model's Rescaling layer handles [-1,1]
         return np.expand_dims(tensor, axis=0)
 
     def predict(self, face_bgr: np.ndarray) -> tuple[str, float]:
         """
-        returns ('Glasses', confidence) or ('No Glasses', confidence).
-        falls back to ('Unknown', 0.0) if the model isnt loaded or the crop is junk.
+        Returns ('Glasses', confidence) or ('No Glasses', confidence).
+        Falls back to ('Unknown', 0.0) if the model isn't loaded or the crop is bad.
         """
         if self.model is None or face_bgr is None or face_bgr.size == 0:
             return ("Unknown", 0.0)

@@ -125,7 +125,7 @@ early_stopping = EarlyStopping(
     restore_best_weights=True
 )
 
-# Freeze layers, prevent overfitting + pretrained weights are already good
+# Freeze layers (prevent overfitting + pretrained weights are already good)
 for layer in model.layers[:8]:
     layer.trainable=False
 

@@ -3,18 +3,19 @@ from __future__ import annotations
 import warnings
 from pathlib import Path
 from typing import Tuple
+import tensorflow as tf
 
 import cv2
 import numpy as np
 
-# alphabetical order - matches how keras's ImageDataGenerator.flow_from_directory() sorts subfolders
+# Alphabetical order - matches how keras ImageDataGenerator.flow_from_directory() sorts subfolders
 EMOTION_LABELS = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 EMOTION_INPUT_SIZE = (48, 48)
 DEFAULT_MODEL_PATH = Path("src/face_emotion/emotion_recognition/fine_tuned_models/ft_emotion_model.h5")
 
 
 class EmotionDetector:
-    """loads the fine-tuned emotion CNN and runs inference on face crops"""
+    # Loads the fine-tuned emotion CNN and runs inference on face crops
 
     def __init__(
         self,
@@ -28,14 +29,13 @@ class EmotionDetector:
             return
 
         try:
-            import keras
-            self.model = keras.models.load_model(str(model_path))
+            self.model = tf.keras.models.load_model(str(model_path))
             print(f"[EmotionDetector] Loaded model from {model_path}")
         except Exception as e:
             warnings.warn(f"[EmotionDetector] Failed to load model: {e}")
 
     def is_available(self) -> bool:
-        """returns True if the model loaded successfully"""
+        # Returns True if model loads successfully
         return self.model is not None
 
     def detect(self, face_bgr: np.ndarray) -> Tuple[str, dict]:

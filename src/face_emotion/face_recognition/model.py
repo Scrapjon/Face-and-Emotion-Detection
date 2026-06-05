@@ -13,6 +13,7 @@ from face_emotion.emotion_recognition.emotion_detector import EmotionDetector
 from face_emotion.face_recognition.face_model import FaceRecognitionClient
 from face_emotion.gender_detection.gender_model import GenderDetector
 from face_emotion.glasses_detection.glasses_model import GlassesDetector
+from face_emotion.race_detection.race_detector import RaceDetector
 from face_emotion.rock_paper_scissors.rock_paper_scissors import Rock_Paper_Scissors
 
 CAMERA_FPS_CAP = 30
@@ -66,13 +67,15 @@ class FacialRecognitionModel:
         emotion_model_path: Path | str = Path(
             "src", "face_emotion", "emotion_recognition", "fine_tuned_models", "ft_emotion_model.h5"
         ),
+        race_model_path = None, # DEFAULTS TO NONE TO TRIGGER AUTO-DOWNLOAD
         gender_model_path: Path | str = Path("src","models", "gender_model.h5"),
-        glasses_model_path: Path | str = Path("src", "models", "glasses_model.h5"),
+        glasses_model_path: Path | str = Path("src","models","glasses_model.h5"),
         liveness_threshold: float = 0.60,
         cosine_threshold: float = COSINE_THRESHOLD,
         do_rpc: Optional[bool] = False
     ) -> None:
-        self.db_path = Path(db_path)
+        self.db_path = Path(db_path) 
+        os.makedirs(self.db_path, exist_ok=True)
         self.cosine_threshold = cosine_threshold
         self.detection_active = True
 
@@ -82,24 +85,30 @@ class FacialRecognitionModel:
         # emotion detector (separate model, 48x48 grayscale -> 7-class softmax)
         self.emotion_detector = EmotionDetector(emotion_model_path)
 
+        # race detector
+        try:
+            self.race_detector = RaceDetector(race_model_path)
+        except Exception as e:
+            print(f"race_detector failed to load due to: {e}")
+
         # gender detector - load once here, not on every detect() call
         try:
             self.gender_detector = GenderDetector(str(gender_model_path))
-        except:
-            pass
+        except Exception as e:
+            print(f"gender_detector failed to load due to: {e}")
         
         try:
         # glasses detector
             self.glasses_detector = GlassesDetector(glasses_model_path)
-        except:
-            pass
+        except Exception as e:
+            print(f"glasses_detector failed to load due to: {e}")
 
         # rock paper scissors (seperat model, 640x640, 3-class)
         try:
             self.do_rpc = do_rpc
             self.rock_paper_scissors = Rock_Paper_Scissors()
-        except:
-            pass
+        except Exception as e:
+            print(f"rock_paper_scissors failed to load due to: {e}")
         
         # our custom fine-tuned VGGFace model for face recognition
         print("[FacialRecognitionModel] Loading face recognition client...")
@@ -259,6 +268,15 @@ class FacialRecognitionModel:
                 except Exception as e:
                     print(f"Emotion detection failed: {e}")
 
+            # race
+            race_label = "Unknown"
+            race_confidence = 0.0
+            if is_live and self.race_detector.is_available():
+                try:
+                    race_label, race_confidence = self.race_detector.predict(face_crop)
+                except Exception as e:
+                    print(f"Race prediction failed: {e}")
+
             # gender - only bother for live faces
             gender_label = "Unknown"
             gender_confidence = 0.0
@@ -271,11 +289,11 @@ class FacialRecognitionModel:
             # glasses - only for live faces because showing a photo of someone with glasses is not interesting
             glasses_label = "Unknown"
             glasses_confidence = 0.0
-            if is_live:
-                try:
-                    glasses_label, glasses_confidence = self.glasses_detector.predict(face_crop)
-                except Exception as e:
-                    print(f"Glasses detection failed: {e}")
+            
+            try:
+                glasses_label, glasses_confidence = self.glasses_detector.predict(face_crop)
+            except Exception as e:
+                print(f"Glasses detection failed: {e}")
 
             # identity recognition
             if not is_live:
@@ -311,6 +329,8 @@ class FacialRecognitionModel:
                 'live_probability': live_probability,
                 'emotion': emotion_label,
                 'emotion_probs': emotion_probs,
+                'race': race_label,
+                'race_confidence': race_confidence,
                 'gender': gender_label,
                 'gender_confidence': gender_confidence,
                 'glasses': glasses_label,
@@ -328,6 +348,8 @@ class FacialRecognitionModel:
             is_live = r.get('is_live', True)
             live_probability = r.get('live_probability', 1.0)
             emotion = r.get('emotion', 'unknown')
+            race = r.get('race', 'Unknown')
+            race_confidence = r.get('race_confidence', 0.0)
             gender = r.get('gender', 'Unknown')
             gender_confidence = r.get('gender_confidence', 0.0)
             glasses = r.get('glasses', 'Unknown')
@@ -340,7 +362,7 @@ class FacialRecognitionModel:
 
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             label_y = y - 10 if y - 10 > 10 else y + h + 20
-            label = f"{name} | {gender} | {glasses} | live={live_probability:.2f}"
+            label = f"{name} | {gender} | {race} ({race_confidence:.2f}) | {glasses} | live={live_probability:.2f}"
             cv2.putText(frame, label, (x, label_y), cv2.FONT_HERSHEY_COMPLEX, 0.65, color, 2)
             # emotion label goes just below the name/liveness text
             cv2.putText(frame, f"feeling: {emotion}", (x, label_y + 22), cv2.FONT_HERSHEY_COMPLEX, 0.5, color, 1)

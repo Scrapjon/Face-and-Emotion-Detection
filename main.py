@@ -1,5 +1,8 @@
-import tensorflow as tf
-import keras
+from app import App
 
-print("TF Version:", tf.__version__)
-print("Keras Version:", keras.__version__)
+def main():
+    app = App(db_path="debug_data")
+    app.run()
+
+if __name__ == "__main__":
+    main()
